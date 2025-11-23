@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Food Delivery App</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial; background: url('https://images.unsplash.com/photo-1600891964599-f61ba0e24092?crop=entropy&cs=tinysrgb&fit=max&fm=jpg') no-repeat center center fixed; background-size: cover; color:white; padding:20px; }
+        .page { max-width:600px; margin:auto; padding:20px; background:rgba(0,0,0,0.75); border-radius:12px; }
+        input { width:100%; padding:10px; margin:10px 0; border-radius:6px; border:1px solid #ccc;}
+        button { padding:10px; width:100%; margin-top:10px; border:none; border-radius:6px; cursor:pointer;}
+        .green-btn { background:#28a745; color:#fff;}
+        .red-btn { background:#dc3545; color:#fff;}
+        .blue-btn { background:#007bff; color:#fff;}
+        .hidden { display:none;}
+        .menu-item, .order-card { display:flex; justify-content:space-between; margin:10px 0; padding:10px; border:1px solid #fff; border-radius:6px; background:rgba(0,0,0,0.5); font-size:18px; word-wrap: break-word;}
+        .cart-item { margin:5px 0; font-size:18px;}
+        h2,h3{text-align:center; font-size:28px;}
+        #ordersList, #historyList{ margin-top:15px;}
+        .order-buttons button{ margin-right:5px;}
+    </style>
+</head>
+<body>
+
+<div class="page" id="signupPage">
+    <h2>Create Account / Login</h2>
+    <input id="signupName" placeholder="Full Name">
+    <input id="signupPhone" placeholder="Phone Number">
+    <button class="green-btn" onclick="signUpLogin()">Continue</button>
+    <button class="blue-btn" onclick="showDevLogin()">Developer Login</button>
+</div>
+
+<div class="page hidden" id="menuPage">
+    <h2>Menu</h2>
+    <div id="menuList"></div>
+    <h3>Cart</h3>
+    <div id="cartList"></div>
+    <button class="green-btn" onclick="placeOrder()">Place Order</button>
+    <button class="red-btn" onclick="logout()">Logout</button>
+</div>
+
+<div class="page hidden" id="devLoginPage">
+    <h2>Developer Login</h2>
+    <input id="devPassword" type="password" placeholder="Enter Developer Password">
+    <button class="green-btn" onclick="devLogin()">Login</button>
+    <button class="red-btn" onclick="showSignup()">Back</button>
+</div>
+
+<div class="page hidden" id="devDashboard">
+    <h2>Developer Dashboard</h2>
+    <button class="blue-btn" onclick="showHistory()">Order History</button>
+    <div id="ordersList"></div>
+    <button class="red-btn" onclick="devLogout()">Exit Dashboard</button>
+</div>
+
+<div class="page hidden" id="orderHistoryPage">
+    <h2>Order History</h2>
+    <div id="historyList"></div>
+    <button class="red-btn" onclick="backToDashboard()">Back</button>
+</div>
+
+<!-- Trap/Phonk sound -->
+<audio id="phonkAudio" loop>
+  <source src="https://assets.mixkit.co/sfx/preview/mixkit-urban-trap-beat-109.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+const supabase = window.supabase.createClient(
+    "https://bjrfxhvzmwocivmmlusn.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqcmZ4aHZ6bXdvY2l2bW1sdXNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzODQzMDgsImV4cCI6MjA3ODk2MDMwOH0.v6d82R7W7gdkR2VmzRNpM1-miAbN6xRlbzH8cOpDubg"
+);
+
+let cart = [];
+const phonk = document.getElementById("phonkAudio");
+
+/* PAGE CONTROLS */
+function showSignup(){ signupPage.classList.remove("hidden"); menuPage.classList.add("hidden"); devLoginPage.classList.add("hidden"); devDashboard.classList.add("hidden"); orderHistoryPage.classList.add("hidden"); }
+function loadMenuPage(){ signupPage.classList.add("hidden"); menuPage.classList.remove("hidden"); renderMenu(); renderCart(); }
+function showDevLogin(){ signupPage.classList.add("hidden"); devLoginPage.classList.remove("hidden"); }
+function showHistory(){ devDashboard.classList.add("hidden"); orderHistoryPage.classList.remove("hidden"); loadHistory(); }
+function backToDashboard(){ orderHistoryPage.classList.add("hidden"); devDashboard.classList.remove("hidden"); }
+
+/* MENU & CART */
+const menu = [
+    {id:1, name:"Burger", price:300},
+    {id:2, name:"Pizza", price:500},
+    {id:3, name:"Fries", price:150},
+    {id:4, name:"Coke", price:50}
+];
+function renderMenu(){ menuList.innerHTML=""; menu.forEach(m=>{ menuList.innerHTML+=`<div class="menu-item"><b>${m.name}</b> - ${m.price} PKR<div><button class="green-btn" onclick="addToCart(${m.id})">+</button><button class="red-btn" onclick="removeFromCart(${m.id})">-</button></div></div>`; }); }
+function addToCart(id){ const item=menu.find(i=>i.id===id); const existing=cart.find(c=>c.id===id); if(existing) existing.quantity++; else cart.push({...item,quantity:1}); renderCart(); }
+function removeFromCart(id){ const index=cart.findIndex(c=>c.id===id); if(index>-1){ cart[index].quantity--; if(cart[index].quantity<=0) cart.splice(index,1);} renderCart(); }
+function renderCart(){ if(cart.length===0){ cartList.innerHTML="Cart empty"; return;} cartList.innerHTML=cart.map(i=>`<div class="cart-item">${i.name} × ${i.quantity} = ${i.price*i.quantity} PKR</div>`).join(""); }
+
+/* SIGNUP / LOGIN */
+async function signUpLogin(){
+    const name = signupName.value.trim();
+    const phone = signupPhone.value.trim();
+    if(!phone) return alert("Enter phone number");
+    let { data: user } = await supabase.from("users").select("*").eq("phone_number",phone).single();
+    if(user){
+        localStorage.setItem("user", JSON.stringify({user_id:user.id}));
+        loadMenuPage();
+    } else {
+        if(!name) return alert("Enter name");
+        const { data, error } = await supabase.from("users").insert({ name, phone_number: phone }).select();
+        if(error) return alert("Error creating account: "+error.message);
+        localStorage.setItem("user", JSON.stringify({user_id:data[0].id}));
+        loadMenuPage();
+    }
+}
+
+/* GPS & PLACE ORDER */
+async function getLocationName(lat, lon){
+    try{ const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`); const data=await res.json(); return data.display_name||"Unknown Location"; }
+    catch{return "Unknown Location";}
+}
+async function placeOrder(){
+    const user = JSON.parse(localStorage.getItem("user"));
+    if(!user) return alert("Login first");
+    if(cart.length===0) return alert("Cart empty");
+    navigator.geolocation.getCurrentPosition(async pos=>{
+        const lat=pos.coords.latitude; const lon=pos.coords.longitude;
+        const location = await getLocationName(lat, lon);
+        const total = cart.reduce((sum,i)=>sum+i.price*i.quantity,0);
+        const { data: orderData, error: orderError } = await supabase.from("orders").insert({ user_id:user.user_id, total, address:location }).select();
+        if(orderError) return alert("Order failed");
+        const orderId = orderData[0].id;
+        for(const item of cart){ await supabase.from("order_items").insert({ order_id:orderId, item_name:item.name, price:item.price, quantity:item.quantity }); }
+        alert("Order placed"); cart=[]; renderCart();
+    }, ()=>alert("GPS denied"));
+}
+
+/* DEVELOPER DASHBOARD */
+function devLogin(){
+    if(devPassword.value==="Saad"){
+        devLoginPage.classList.add("hidden"); devDashboard.classList.remove("hidden"); startRealtime();
+    } else alert("Wrong password");
+}
+function devLogout(){ devDashboard.classList.add("hidden"); showSignup(); }
+
+/* Realtime Orders + Phonk */
+async function startRealtime(){
+    loadOrders();
+    supabase.channel("orders-channel")
+        .on("postgres_changes",{event:"INSERT",schema:"public",table:"orders"},()=>loadOrders())
+        .on("postgres_changes",{event:"UPDATE",schema:"public",table:"orders"},()=>loadOrders())
+        .subscribe();
+}
+
+async function loadOrders(){
+    const { data: orders } = await supabase.from("orders").select("*").eq("status","pending").order("created_at");
+    ordersList.innerHTML=""; let hasPending=false;
+    for(let o of orders){
+        const { data:user } = await supabase.from("users").select("*").eq("id",o.user_id).single();
+        const { data: items } = await supabase.from("order_items").select("*").eq("order_id",o.id);
+        const itemHTML = items.map(i=>`${i.item_name} × ${i.quantity} = ${i.price*i.quantity} PKR`).join("<br>");
+        hasPending=true;
+        ordersList.innerHTML+=`<div class="order-card"><div><b>Order ID:</b>${o.id}<br><b>User:</b>${user.name}<br><b>Phone:</b>${user.phone_number}<br><b>Location:</b>${o.address}<br><b>Items:</b><br>${itemHTML}<br><b>Total:</b>${o.total} PKR</div><div class="order-buttons"><button class="green-btn" onclick="acceptOrder('${o.id}')">Accept</button><button class="red-btn" onclick="declineOrder('${o.id}')">Decline</button></div></div>`;
+    }
+    if(hasPending){ phonk.play().catch(e=>console.log(e)); }
+    else { phonk.pause(); phonk.currentTime=0; }
+}
+
+/* ACCEPT / DECLINE */
+async function acceptOrder(id){
+    await supabase.from("orders").update({status:"accepted"}).eq("id",id);
+    loadOrders(); loadHistory();
+}
+async function declineOrder(id){
+    await supabase.from("orders").update({status:"declined"}).eq("id",id);
+    loadOrders(); loadHistory();
+}
+
+/* HISTORY */
+async function loadHistory(){
+    const { data: orders } = await supabase.from("orders").select("*").neq("status","pending").order("created_at");
+    historyList.innerHTML="";
+    for(let o of orders){
+        const { data:user } = await supabase.from("users").select("*").eq("id",o.user_id).single();
+        const { data: items } = await supabase.from("order_items").select("*").eq("order_id",o.id);
+        const itemHTML = items.map(i=>`${i.item_name} × ${i.quantity} = ${i.price*i.quantity} PKR`).join("<br>");
+        historyList.innerHTML+=`<div class="order-card" style="font-size:28px; color:white; width:100%; margin-bottom:15px;"><b>Order ID:</b>${o.id}<br><b>User:</b>${user.name}<br><b>Phone:</b>${user.phone_number}<br><b>Location:</b>${o.address}<br><b>Items:</b><br>${itemHTML}<br><b>Total:</b>${o.total} PKR<br><b>Status:</b>${o.status}</div>`;
+    }
+}
+
+/* LOGOUT */
+function logout(){ localStorage.clear(); location.reload(); }
+</script>
+</body>
+</html>
